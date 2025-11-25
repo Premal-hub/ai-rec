@@ -1,0 +1,112 @@
+
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
+
+export const useAuthRedirect = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    // If Firebase is not configured, create mock user and skip auth check
+    if (!auth) {
+      const mockUser = {
+        uid: 'mock-user-123',
+        email: 'demo@example.com',
+        displayName: 'Demo User',
+        metadata: {
+          creationTime: new Date().toISOString()
+        }
+      } as User;
+      
+      setUser(mockUser);
+      setLoading(false);
+      
+      // Mock role-based redirect
+      const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+      if (currentPath === '/login' || currentPath === '/register' || currentPath === '/') {
+        // Demo mode - redirect to client by default
+        setTimeout(() => router.push('/client'), 100);
+      }
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setUser(user);
+      
+      if (user && db) {
+        try {
+          // Check user role and redirect accordingly
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          let role = 'client';
+          
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            role = userData.role || 'client';
+          } else {
+            // Create user document with default role
+            await setDoc(doc(db, 'users', user.uid), {
+              email: user.email,
+              name: user.displayName || user.email?.split('@')[0] || 'User',
+              role: 'client',
+              createdAt: new Date().toISOString()
+            });
+          }
+          
+          // Only redirect if on login/register/home pages
+          const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+          if (currentPath === '/login' || currentPath === '/register' || currentPath === '/') {
+            if (role === 'admin') {
+              router.push('/admin');
+            } else {
+              router.push('/client');
+            }
+          }
+        } catch (error) {
+          console.error('Error checking user role:', error);
+          // Fallback to client on error
+          if (typeof window !== 'undefined') {
+            const currentPath = window.location.pathname;
+            if (currentPath === '/login' || currentPath === '/register' || currentPath === '/') {
+              router.push('/client');
+            }
+          }
+        }
+      }
+      
+      setLoading(false);
+      
+      // Redirect logic for unauthenticated users
+      if (!user && typeof window !== 'undefined') {
+        const publicRoutes = ['/', '/login', '/register', '/forgot-password'];
+        const currentPath = window.location.pathname;
+        
+        if (!publicRoutes.includes(currentPath)) {
+          router.push('/login');
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router]);
+
+  return { user, loading };
+};
+
+export const useRequireAuth = () => {
+  const { user, loading } = useAuthRedirect();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !user && auth) {
+      router.push('/login');
+    }
+  }, [user, loading, router]);
+
+  return { user, loading };
+};

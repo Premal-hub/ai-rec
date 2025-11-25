@@ -1,0 +1,45 @@
+
+'use client';
+
+import { signOut } from 'firebase/auth';
+import { auth } from '../lib/firebase';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+
+export default function LogoutButton() {
+  const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    if (!auth) {
+      // If Firebase not configured, just redirect
+      router.push('/login');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await signOut(auth);
+      router.push('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleLogout}
+      disabled={isLoading}
+      className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 whitespace-nowrap cursor-pointer"
+    >
+      {isLoading ? (
+        <div className="loading-spinner w-4 h-4"></div>
+      ) : (
+        <i className="ri-logout-box-line w-4 h-4 flex items-center justify-center"></i>
+      )}
+      {isLoading ? 'Signing out...' : 'Logout'}
+    </button>
+  );
+}
